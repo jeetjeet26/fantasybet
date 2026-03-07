@@ -18,13 +18,23 @@ export async function createLeague(formData: FormData) {
 
   if (error) return { error: error.message };
 
+  // Backfill today's open games for newly-created leagues if available.
+  // This handles leagues created after the scheduled daily snapshot.
+  try {
+    await supabase.functions.invoke("snapshot-odds");
+  } catch {
+    // Non-fatal: league still exists even if odds pull fails.
+  }
+
   redirect(`/leagues/${data.id}`);
 }
 
 export async function joinLeague(slugOrCode: string) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return { error: "Not authenticated" };
+  if (!user) {
+    redirect(`/login?next=${encodeURIComponent(`/join/${slugOrCode}`)}`);
+  }
 
   const key = slugOrCode.toLowerCase().trim();
 

@@ -28,6 +28,9 @@ export async function placeBet(input: PlaceBetInput) {
 
   if (gameError || !game) return { error: "Game not found" };
   if (game.status !== "upcoming") return { error: "This game has already started" };
+  if (new Date(game.commence_time).getTime() <= Date.now()) {
+    return { error: "Betting is closed for this game" };
+  }
 
   const today = new Date().toISOString().split("T")[0];
 

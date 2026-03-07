@@ -32,10 +32,16 @@ export async function updateSession(request: NextRequest) {
   const isAuthPage =
     request.nextUrl.pathname.startsWith("/login") ||
     request.nextUrl.pathname.startsWith("/signup");
+  const isJoinPage =
+    request.nextUrl.pathname.startsWith("/join/") ||
+    request.nextUrl.pathname.startsWith("/leagues/join/");
+  const isPublicPage =
+    request.nextUrl.pathname === "/" || isAuthPage || isJoinPage;
 
-  if (!user && !isAuthPage && request.nextUrl.pathname !== "/") {
+  if (!user && !isPublicPage) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
+    url.searchParams.set("next", request.nextUrl.pathname);
     return NextResponse.redirect(url);
   }
 

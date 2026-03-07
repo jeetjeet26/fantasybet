@@ -11,6 +11,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [next] = useState(() => {
+    if (typeof window === "undefined") return "/dashboard";
+    const value = new URLSearchParams(window.location.search).get("next");
+    if (value && value.startsWith("/") && !value.startsWith("//")) {
+      return value;
+    }
+    return "/dashboard";
+  });
 
   async function handleSubmit(formData: FormData) {
     setPending(true);
@@ -33,6 +41,7 @@ export default function LoginPage() {
         </CardHeader>
         <CardContent>
           <form action={handleSubmit} className="space-y-4">
+            <input type="hidden" name="next" value={next} />
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
               <Input

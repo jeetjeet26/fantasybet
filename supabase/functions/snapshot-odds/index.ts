@@ -52,10 +52,29 @@ interface Outcome {
   point?: number;
 }
 
+interface SelectedGame {
+  sport_key: string;
+  sport_title: string;
+  home_team: string;
+  away_team: string;
+  commence_time: string;
+  spread_home: number | null;
+  spread_away: number | null;
+  spread_home_odds: number | null;
+  spread_away_odds: number | null;
+  moneyline_home: number | null;
+  moneyline_away: number | null;
+  total_over: number | null;
+  total_under: number | null;
+  total_over_odds: number | null;
+  total_under_odds: number | null;
+}
+
 Deno.serve(async () => {
   try {
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
     const today = new Date().toISOString().split("T")[0];
+    const nowIso = new Date().toISOString();
 
     const { data: leagues } = await supabase
       .from("leagues")
@@ -91,41 +110,10 @@ Deno.serve(async () => {
       return new Date(a.commence_time).getTime() - new Date(b.commence_time).getTime();
     });
 
-    const selected = allEvents.slice(0, 5);
-
-    if (selected.length === 0) {
-      return new Response(JSON.stringify({ message: "No games found for today" }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
-    let created = 0;
-
-    for (const league of leagues) {
-      const { data: existing } = await supabase
-        .from("daily_slates")
-        .select("id")
-        .eq("league_id", league.id)
-        .eq("date", today)
-        .single();
-
-      if (existing) continue;
-
-      const { data: slate, error: slateError } = await supabase
-        .from("daily_slates")
-        .insert({
-          league_id: league.id,
-          date: today,
-          locked_at: new Date().toISOString(),
-          status: "open",
-        })
-        .select()
-        .single();
-
-      if (slateError) throw slateError;
-
-      const games = selected.map((event) => {
+    let selectedGames: SelectedGame[] = allEvents
+      .filter((e) => new Date(e.commence_time).toISOString() > nowIso)
+      .slice(0, 5)
+      .map((event) => {
         const book = event.bookmakers[0];
         const spreads = book?.markets.find((m) => m.key === "spreads");
         const h2h = book?.markets.find((m) => m.key === "h2h");
@@ -139,7 +127,6 @@ Deno.serve(async () => {
         const under = totals?.outcomes.find((o) => o.name === "Under");
 
         return {
-          slate_id: slate.id,
           sport_key: event.sport_key,
           sport_title: event.sport_title,
           home_team: event.home_team,
@@ -155,6 +142,104 @@ Deno.serve(async () => {
           total_under: under?.point ?? null,
           total_over_odds: over?.price ?? null,
           total_under_odds: under?.price ?? null,
+        };
+      });
+
+    // Fallback: if API has no open games at call time, clone any still-open games from existing
+    // same-day slates so late-created leagues can still participate.
+    if (selectedGames.length === 0) {
+      const { data: todaySlates } = await supabase
+        .from("daily_slates")
+        .select("id")
+        .eq("date", today);
+
+      const slateIds = (todaySlates ?? []).map((s) => s.id);
+      if (slateIds.length > 0) {
+        const { data: openTemplateGames } = await supabase
+          .from("slate_games")
+          .select("sport_key, sport_title, home_team, away_team, commence_time, spread_home, spread_away, spread_home_odds, spread_away_odds, moneyline_home, moneyline_away, total_over, total_under, total_over_odds, total_under_odds, status")
+          .in("slate_id", slateIds)
+          .eq("status", "upcoming")
+          .gt("commence_time", nowIso)
+          .order("commence_time", { ascending: true });
+
+        const deduped = new Map<string, SelectedGame>();
+        for (const g of openTemplateGames ?? []) {
+          const key = `${g.sport_key}:${g.home_team}:${g.away_team}:${g.commence_time}`;
+          if (deduped.has(key)) continue;
+          deduped.set(key, {
+            sport_key: g.sport_key,
+            sport_title: g.sport_title,
+            home_team: g.home_team,
+            away_team: g.away_team,
+            commence_time: g.commence_time,
+            spread_home: g.spread_home,
+            spread_away: g.spread_away,
+            spread_home_odds: g.spread_home_odds,
+            spread_away_odds: g.spread_away_odds,
+            moneyline_home: g.moneyline_home,
+            moneyline_away: g.moneyline_away,
+            total_over: g.total_over,
+            total_under: g.total_under,
+            total_over_odds: g.total_over_odds,
+            total_under_odds: g.total_under_odds,
+          });
+          if (deduped.size === 5) break;
+        }
+        selectedGames = Array.from(deduped.values());
+      }
+    }
+
+    if (selectedGames.length === 0) {
+      return new Response(JSON.stringify({ message: "No open games available for today" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    let created = 0;
+
+    for (const league of leagues) {
+      const { data: existing } = await supabase
+        .from("daily_slates")
+        .select("id")
+        .eq("league_id", league.id)
+        .eq("date", today)
+        .maybeSingle();
+
+      if (existing) continue;
+
+      const { data: slate, error: slateError } = await supabase
+        .from("daily_slates")
+        .insert({
+          league_id: league.id,
+          date: today,
+          locked_at: selectedGames[0]?.commence_time ?? new Date().toISOString(),
+          status: "open",
+        })
+        .select()
+        .single();
+
+      if (slateError) throw slateError;
+
+      const games = selectedGames.map((event) => {
+        return {
+          slate_id: slate.id,
+          sport_key: event.sport_key,
+          sport_title: event.sport_title,
+          home_team: event.home_team,
+          away_team: event.away_team,
+          commence_time: event.commence_time,
+          spread_home: event.spread_home,
+          spread_away: event.spread_away,
+          spread_home_odds: event.spread_home_odds,
+          spread_away_odds: event.spread_away_odds,
+          moneyline_home: event.moneyline_home,
+          moneyline_away: event.moneyline_away,
+          total_over: event.total_over,
+          total_under: event.total_under,
+          total_over_odds: event.total_over_odds,
+          total_under_odds: event.total_under_odds,
           status: "upcoming",
         };
       });
@@ -182,7 +267,7 @@ Deno.serve(async () => {
     }
 
     return new Response(
-      JSON.stringify({ message: `Created ${created} slates with ${selected.length} games each` }),
+      JSON.stringify({ message: `Created ${created} slates with ${selectedGames.length} open games each` }),
       { status: 200, headers: { "Content-Type": "application/json" } }
     );
   } catch (err) {
