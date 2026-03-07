@@ -11,13 +11,11 @@ export default async function JoinBySlugPage({ params }: Props) {
   const supabase = await createClient();
 
   const key = slug.toLowerCase().trim();
-  const { data: league } = await supabase
-    .from("leagues")
-    .select("id, name")
-    .or(`invite_slug.eq.${key},invite_code.eq.${key}`)
+  const { data: league, error } = await supabase
+    .rpc("find_league_by_invite", { input_token: key })
     .maybeSingle();
 
-  if (!league) notFound();
+  if (error || !league) notFound();
 
   return <JoinBySlugForm slug={slug} leagueName={league.name} />;
 }

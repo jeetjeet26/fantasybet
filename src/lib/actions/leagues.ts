@@ -61,9 +61,7 @@ export async function joinLeague(slugOrCode: string) {
   const key = normalizeInviteToken(slugOrCode);
 
   const { data: league, error: findError } = await supabase
-    .from("leagues")
-    .select("id, max_members")
-    .or(`invite_slug.eq.${key},invite_code.eq.${key}`)
+    .rpc("find_league_by_invite", { input_token: key })
     .maybeSingle();
 
   if (findError || !league) return { error: "League not found" };
