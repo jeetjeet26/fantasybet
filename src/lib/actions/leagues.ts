@@ -3,6 +3,27 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 
+function normalizeInviteToken(input: string) {
+  let key = input.trim().toLowerCase();
+
+  if (key.startsWith("http://") || key.startsWith("https://")) {
+    try {
+      const url = new URL(key);
+      key = url.pathname.toLowerCase();
+    } catch {
+      // Fall through to string-based cleanup.
+    }
+  }
+
+  key = key.split("?")[0]?.split("#")[0] ?? key;
+  key = key.replace(/^\/+/, "");
+
+  if (key.startsWith("join/")) key = key.slice("join/".length);
+  if (key.startsWith("leagues/join/")) key = key.slice("leagues/join/".length);
+
+  return key.trim();
+}
+
 export async function createLeague(formData: FormData) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -33,10 +54,11 @@ export async function joinLeague(slugOrCode: string) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) {
-    redirect(`/login?next=${encodeURIComponent(`/join/${slugOrCode}`)}`);
+    const token = normalizeInviteToken(slugOrCode);
+    redirect(`/login?next=${encodeURIComponent(`/join/${token}`)}`);
   }
 
-  const key = slugOrCode.toLowerCase().trim();
+  const key = normalizeInviteToken(slugOrCode);
 
   const { data: league, error: findError } = await supabase
     .from("leagues")
