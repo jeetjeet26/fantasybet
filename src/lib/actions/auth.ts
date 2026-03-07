@@ -21,6 +21,16 @@ export async function signUp(formData: FormData) {
     return { error: error.message };
   }
 
+  // With auto-confirm enabled in DB trigger, sign in immediately.
+  const { error: signInError } = await supabase.auth.signInWithPassword({
+    email,
+    password,
+  });
+
+  if (signInError) {
+    return { error: signInError.message };
+  }
+
   redirect("/dashboard");
 }
 
