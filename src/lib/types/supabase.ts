@@ -488,6 +488,14 @@ export type Database = {
         Args: { american_odds: number; wager: number }
         Returns: number
       }
+      find_league_by_invite: {
+        Args: { input_token: string }
+        Returns: {
+          id: string
+          max_members: number | null
+          name: string
+        }[]
+      }
       is_league_member: { Args: { check_league_id: string }; Returns: boolean }
       placement_points: { Args: { place: number }; Returns: number }
       user_league_ids: { Args: Record<string, never>; Returns: string[] }
