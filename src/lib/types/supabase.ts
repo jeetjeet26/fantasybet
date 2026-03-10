@@ -433,6 +433,7 @@ export type Database = {
           id: string
           league_id: string
           placement: number
+          week_end: string
           total_losses: number
           total_points: number
           total_profit: number
@@ -444,6 +445,7 @@ export type Database = {
           id?: string
           league_id: string
           placement?: number
+          week_end: string
           total_losses?: number
           total_points?: number
           total_profit?: number
@@ -455,6 +457,7 @@ export type Database = {
           id?: string
           league_id?: string
           placement?: number
+          week_end?: string
           total_losses?: number
           total_points?: number
           total_profit?: number

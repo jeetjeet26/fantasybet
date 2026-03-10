@@ -35,7 +35,30 @@ export function getWeekStartDateKey(dateKey: string): string {
   return date.toISOString().split("T")[0];
 }
 
+export function getWeekEndDateKey(dateKey: string): string {
+  const [year, month, day] = getWeekStartDateKey(dateKey).split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  date.setUTCDate(date.getUTCDate() + 6);
+  return date.toISOString().split("T")[0];
+}
+
 export function getCurrentEasternWeekStart(date = new Date()): string {
   return getWeekStartDateKey(getEasternDateKey(date));
+}
+
+export function getCurrentEasternWeekEnd(date = new Date()): string {
+  return getWeekEndDateKey(getEasternDateKey(date));
+}
+
+export function formatDateKey(dateKey: string, options?: Intl.DateTimeFormatOptions): string {
+  const [year, month, day] = dateKey.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: "UTC",
+    month: "short",
+    day: "numeric",
+    ...options,
+  }).format(date);
 }
 

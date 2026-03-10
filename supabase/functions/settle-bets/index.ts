@@ -40,6 +40,13 @@ function getWeekStartDateKey(dateKey: string) {
   return date.toISOString().split("T")[0];
 }
 
+function getWeekEndDateKey(dateKey: string) {
+  const [year, month, day] = getWeekStartDateKey(dateKey).split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  date.setUTCDate(date.getUTCDate() + 6);
+  return date.toISOString().split("T")[0];
+}
+
 Deno.serve(async () => {
   try {
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
@@ -207,13 +214,14 @@ Deno.serve(async () => {
 
       // Update weekly results for this league
       const monday = getWeekStartDateKey(slate.date);
+      const sunday = getWeekEndDateKey(slate.date);
 
       const { data: weekDays } = await supabase
         .from("daily_results")
         .select("*")
         .eq("league_id", leagueId)
         .gte("date", monday)
-        .lte("date", slate.date);
+        .lte("date", sunday);
 
       const weeklyByUser: Record<string, { points: number; profit: number; wins: number; losses: number }> = {};
 
@@ -232,6 +240,7 @@ Deno.serve(async () => {
           user_id: userId,
           league_id: leagueId,
           week_start: monday,
+          week_end: sunday,
           ...stats,
           total_points: stats.points,
           total_profit: stats.profit,

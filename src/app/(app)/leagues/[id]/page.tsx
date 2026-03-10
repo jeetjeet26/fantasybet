@@ -11,7 +11,7 @@ import { CommissionerSection } from "@/components/leagues/commissioner-section";
 import { LeagueBetting } from "@/components/betting/league-betting";
 import { DailyBetSlip } from "@/components/betting/daily-bet-slip";
 import { DAILY_CREDITS } from "@/lib/odds";
-import { getCurrentEasternWeekStart, getEasternDateKey } from "@/lib/time";
+import { formatDateKey, getCurrentEasternWeekEnd, getCurrentEasternWeekStart, getEasternDateKey } from "@/lib/time";
 import type { SlateGame, Bet } from "@/lib/types/database";
 
 interface Props {
@@ -87,12 +87,16 @@ export default async function LeagueDetailPage({ params }: Props) {
     .order("placement", { ascending: true });
 
   const monday = getCurrentEasternWeekStart();
+  const sunday = getCurrentEasternWeekEnd();
   const { data: weeklyResults } = await supabase
     .from("weekly_results")
     .select("*, profiles(display_name)")
     .eq("league_id", id)
     .eq("week_start", monday)
+    .eq("week_end", sunday)
     .order("placement", { ascending: true });
+
+  const weeklyRangeLabel = `${formatDateKey(monday)} - ${formatDateKey(sunday, { month: "short", day: "numeric", year: "numeric" })}`;
 
   const myDailyResult = (dailyResults ?? []).find((result) => result.user_id === user?.id);
   const membersCount = members?.length ?? 0;
@@ -206,14 +210,17 @@ export default async function LeagueDetailPage({ params }: Props) {
         <TabsContent value="weekly" className="mt-4">
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Weekly Leaderboard</CardTitle>
+              <CardTitle className="text-base">Weekly Leaderboard: {weeklyRangeLabel}</CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Tracks this league from Monday through Sunday and resets after Sunday&apos;s slate settles.
+              </p>
             </CardHeader>
             <CardContent>
               {weeklyResults && weeklyResults.length > 0 ? (
                 <LeaderboardTable results={weeklyResults as unknown as Parameters<typeof LeaderboardTable>[0]["results"]} type="weekly" />
               ) : (
                 <p className="text-sm text-muted-foreground">
-                  No weekly results yet. Keep competing!
+                  No weekly results posted for this Monday-Sunday window yet. Keep competing!
                 </p>
               )}
             </CardContent>
