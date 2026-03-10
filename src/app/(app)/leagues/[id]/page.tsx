@@ -10,6 +10,7 @@ import { InviteSection } from "@/components/leagues/invite-section";
 import { CommissionerSection } from "@/components/leagues/commissioner-section";
 import { LeagueBetting } from "@/components/betting/league-betting";
 import { DailyBetSlip } from "@/components/betting/daily-bet-slip";
+import { rankDailyResults, rankWeeklyResults } from "@/lib/leaderboards";
 import { DAILY_CREDITS } from "@/lib/odds";
 import { syncBetSettlement } from "@/lib/settlement";
 import { formatDateKey, getCurrentEasternWeekEnd, getCurrentEasternWeekStart, getEasternDateKey } from "@/lib/time";
@@ -85,22 +86,22 @@ export default async function LeagueDetailPage({ params }: Props) {
     .from("daily_results")
     .select("*, profiles(display_name)")
     .eq("league_id", id)
-    .eq("date", today)
-    .order("placement", { ascending: true });
+    .eq("date", today);
 
   const monday = getCurrentEasternWeekStart();
   const sunday = getCurrentEasternWeekEnd();
-  const { data: weeklyResults } = await supabase
-    .from("weekly_results")
+  const { data: weeklyDailyResults } = await supabase
+    .from("daily_results")
     .select("*, profiles(display_name)")
     .eq("league_id", id)
-    .eq("week_start", monday)
-    .eq("week_end", sunday)
-    .order("placement", { ascending: true });
+    .gte("date", monday)
+    .lte("date", sunday);
 
   const weeklyRangeLabel = `${formatDateKey(monday)} - ${formatDateKey(sunday, { month: "short", day: "numeric", year: "numeric" })}`;
 
-  const myDailyResult = (dailyResults ?? []).find((result) => result.user_id === user?.id);
+  const rankedDailyResults = rankDailyResults((dailyResults ?? []) as Parameters<typeof rankDailyResults>[0]);
+  const rankedWeeklyResults = rankWeeklyResults((weeklyDailyResults ?? []) as Parameters<typeof rankWeeklyResults>[0]);
+  const myDailyResult = rankedDailyResults.find((result) => result.user_id === user?.id);
   const membersCount = members?.length ?? 0;
 
   return (
@@ -153,12 +154,12 @@ export default async function LeagueDetailPage({ params }: Props) {
               value={myDailyResult ? `#${myDailyResult.placement}` : "—"}
               helper={
                 myDailyResult
-                  ? `${Number(myDailyResult.net_profit) >= 0 ? "+" : ""}${Number(myDailyResult.net_profit).toFixed(2)} net`
+                  ? `${myDailyResult.bankedCredits.toFixed(2)} banked`
                   : "No settled bets yet"
               }
               helperClassName={
                 myDailyResult
-                  ? Number(myDailyResult.net_profit) >= 0
+                  ? myDailyResult.bankedCredits >= DAILY_CREDITS
                     ? "text-green-500"
                     : "text-red-500"
                   : undefined
@@ -193,10 +194,13 @@ export default async function LeagueDetailPage({ params }: Props) {
           <Card>
             <CardHeader>
               <CardTitle className="text-base">Daily Leaderboard</CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Ranked by credits banked from settled bets after unused credits expire.
+              </p>
             </CardHeader>
             <CardContent>
-              {dailyResults && dailyResults.length > 0 ? (
-                <LeaderboardTable results={dailyResults as unknown as Parameters<typeof LeaderboardTable>[0]["results"]} type="daily" />
+              {rankedDailyResults.length > 0 ? (
+                <LeaderboardTable results={rankedDailyResults} type="daily" />
               ) : (
                 <p className="text-sm text-muted-foreground">
                   No settled bets yet for this slate. Standings update as games finish.
@@ -211,12 +215,12 @@ export default async function LeagueDetailPage({ params }: Props) {
             <CardHeader>
               <CardTitle className="text-base">Weekly Leaderboard: {weeklyRangeLabel}</CardTitle>
               <p className="text-sm text-muted-foreground">
-                Tracks this league from Monday through Sunday and resets after Sunday&apos;s slate settles.
+                Ranked by total banked credits from this Monday-Sunday window.
               </p>
             </CardHeader>
             <CardContent>
-              {weeklyResults && weeklyResults.length > 0 ? (
-                <LeaderboardTable results={weeklyResults as unknown as Parameters<typeof LeaderboardTable>[0]["results"]} type="weekly" />
+              {rankedWeeklyResults.length > 0 ? (
+                <LeaderboardTable results={rankedWeeklyResults} type="weekly" />
               ) : (
                 <p className="text-sm text-muted-foreground">
                   No weekly results posted for this Monday-Sunday window yet. Keep competing!

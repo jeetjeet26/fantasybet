@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { rankDailyResults } from "@/lib/leaderboards";
 import { DAILY_CREDITS } from "@/lib/odds";
 import { syncBetSettlement } from "@/lib/settlement";
 import { getEasternDateKey } from "@/lib/time";
@@ -35,6 +36,7 @@ export default async function DashboardPage() {
 
       let creditsRemaining = DAILY_CREDITS;
       let dailyPlacement: number | null = null;
+      let bankedCredits: number | null = null;
 
       if (slate) {
         const { data: games } = await supabase
@@ -51,18 +53,20 @@ export default async function DashboardPage() {
           .filter((b) => gameIds.includes(b.slate_game_id))
           .reduce((sum, b) => sum + Number(b.amount), 0);
         creditsRemaining = DAILY_CREDITS - wagered;
-      }
 
-      const { data: myResult } = await supabase
-        .from("daily_results")
-        .select("placement, net_profit")
-        .eq("league_id", league.id)
-        .eq("user_id", user!.id)
-        .eq("date", today)
-        .maybeSingle();
+        const { data: dailyResults } = await supabase
+          .from("daily_results")
+          .select("user_id, total_wagered, total_won, wins, losses, pushes")
+          .eq("league_id", league.id)
+          .eq("date", today);
 
-      if (myResult) {
-        dailyPlacement = myResult.placement;
+        const rankedResults = rankDailyResults((dailyResults ?? []) as Parameters<typeof rankDailyResults>[0]);
+        const myResult = rankedResults.find((result) => result.user_id === user!.id);
+
+        if (myResult) {
+          dailyPlacement = myResult.placement;
+          bankedCredits = myResult.bankedCredits;
+        }
       }
 
       return {
@@ -70,7 +74,7 @@ export default async function DashboardPage() {
         slate: slate ?? null,
         creditsRemaining,
         dailyPlacement,
-        netProfit: myResult?.net_profit ?? null,
+        bankedCredits,
       };
     })
   );
@@ -185,7 +189,7 @@ export default async function DashboardPage() {
         </Card>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {overview.map(({ league, slate, creditsRemaining, dailyPlacement, netProfit }) => (
+          {overview.map(({ league, slate, creditsRemaining, dailyPlacement, bankedCredits }) => (
             <Link key={league.id} href={`/leagues/${league.id}`}>
               <Card className="h-full transition-all hover:-translate-y-0.5 hover:bg-accent/30 hover:shadow-sm">
                 <CardHeader className="pb-3">
@@ -216,8 +220,8 @@ export default async function DashboardPage() {
                         <LeagueMetric
                           label="Today"
                           value={dailyPlacement != null ? `#${dailyPlacement}` : "—"}
-                          helper={netProfit != null ? `${netProfit >= 0 ? "+" : ""}${Number(netProfit).toFixed(2)}` : "No settled bets yet"}
-                          helperClassName={netProfit == null ? undefined : netProfit >= 0 ? "text-green-500" : "text-red-500"}
+                          helper={bankedCredits != null ? `${bankedCredits.toFixed(2)} banked` : "No settled bets yet"}
+                          helperClassName={bankedCredits == null ? undefined : bankedCredits >= DAILY_CREDITS ? "text-green-500" : "text-red-500"}
                         />
                       </div>
                       <p className="text-xs text-muted-foreground">

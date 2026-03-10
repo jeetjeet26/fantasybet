@@ -54,7 +54,7 @@ export default function LandingPage() {
           />
           <Feature
             title="Compete Weekly"
-            description="Earn placement points each day. Weekly leaderboard crowns the champion."
+            description="Your daily banked credits roll into a weekly leaderboard to crown the champion."
           />
         </div>
       </main>
