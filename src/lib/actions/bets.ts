@@ -2,6 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { calculatePayout, DAILY_CREDITS } from "@/lib/odds";
+import { syncBetSettlement } from "@/lib/settlement";
 import { getEasternDateKey } from "@/lib/time";
 import type { BetType, BetPick } from "@/lib/types/database";
 
@@ -254,14 +255,8 @@ export async function getDailyBetSlip(leagueId: string): Promise<DailyBetSlipRes
 }
 
 export async function refreshDailyBetSlip(leagueId: string): Promise<DailyBetSlipResponse> {
-  const supabase = await createClient();
-
   // Best-effort live scoring trigger. Even if this fails, we still return latest known state.
-  try {
-    await supabase.functions.invoke("settle-bets");
-  } catch {
-    // no-op
-  }
+  await syncBetSettlement();
 
   return fetchDailyBetSlip(leagueId);
 }

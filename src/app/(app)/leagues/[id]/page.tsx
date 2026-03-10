@@ -11,6 +11,7 @@ import { CommissionerSection } from "@/components/leagues/commissioner-section";
 import { LeagueBetting } from "@/components/betting/league-betting";
 import { DailyBetSlip } from "@/components/betting/daily-bet-slip";
 import { DAILY_CREDITS } from "@/lib/odds";
+import { syncBetSettlement } from "@/lib/settlement";
 import { formatDateKey, getCurrentEasternWeekEnd, getCurrentEasternWeekStart, getEasternDateKey } from "@/lib/time";
 import type { SlateGame, Bet } from "@/lib/types/database";
 
@@ -21,6 +22,7 @@ interface Props {
 export default async function LeagueDetailPage({ params }: Props) {
   const { id } = await params;
   const supabase = await createClient();
+  await syncBetSettlement();
 
   const { data: league, error } = await supabase
     .from("leagues")
@@ -152,7 +154,7 @@ export default async function LeagueDetailPage({ params }: Props) {
               helper={
                 myDailyResult
                   ? `${Number(myDailyResult.net_profit) >= 0 ? "+" : ""}${Number(myDailyResult.net_profit).toFixed(2)} net`
-                  : "No result posted yet"
+                  : "No settled bets yet"
               }
               helperClassName={
                 myDailyResult
@@ -196,7 +198,7 @@ export default async function LeagueDetailPage({ params }: Props) {
                   <LeaderboardTable results={dailyResults as unknown as Parameters<typeof LeaderboardTable>[0]["results"]} type="daily" />
                 ) : (
                   <p className="text-sm text-muted-foreground">
-                    No results yet for today. Place your bets!
+                    No settled bets yet for this slate. Standings update as games finish.
                   </p>
                 )}
               </CardContent>

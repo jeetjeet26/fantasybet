@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { DAILY_CREDITS } from "@/lib/odds";
+import { syncBetSettlement } from "@/lib/settlement";
 import { getEasternDateKey } from "@/lib/time";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -10,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 export default async function DashboardPage() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
+  await syncBetSettlement();
 
   const { data: memberships } = await supabase
     .from("league_members")
@@ -214,7 +216,7 @@ export default async function DashboardPage() {
                         <LeagueMetric
                           label="Today"
                           value={dailyPlacement != null ? `#${dailyPlacement}` : "—"}
-                          helper={netProfit != null ? `${netProfit >= 0 ? "+" : ""}${Number(netProfit).toFixed(2)}` : "No result yet"}
+                          helper={netProfit != null ? `${netProfit >= 0 ? "+" : ""}${Number(netProfit).toFixed(2)}` : "No settled bets yet"}
                           helperClassName={netProfit == null ? undefined : netProfit >= 0 ? "text-green-500" : "text-red-500"}
                         />
                       </div>

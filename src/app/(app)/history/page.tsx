@@ -10,10 +10,12 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatOdds } from "@/lib/odds";
+import { syncBetSettlement } from "@/lib/settlement";
 
 export default async function HistoryPage() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
+  await syncBetSettlement();
 
   const { data: bets } = await supabase
     .from("bets")
