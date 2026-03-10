@@ -69,6 +69,36 @@ interface SelectedGame {
   total_under_odds: number | null;
 }
 
+const EASTERN_TIME_ZONE = "America/New_York";
+const SLATE_RELEASE_HOUR_ET = 6;
+
+function getEasternDateKey(date = new Date()) {
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: EASTERN_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+
+  const parts = formatter.formatToParts(date);
+  const year = parts.find((part) => part.type === "year")?.value;
+  const month = parts.find((part) => part.type === "month")?.value;
+  const day = parts.find((part) => part.type === "day")?.value;
+
+  if (!year || !month || !day) throw new Error("Failed to resolve Eastern date");
+  return `${year}-${month}-${day}`;
+}
+
+function getEasternHour(date = new Date()) {
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: EASTERN_TIME_ZONE,
+    hour: "2-digit",
+    hourCycle: "h23",
+  });
+
+  return Number(formatter.format(date));
+}
+
 Deno.serve(async () => {
   try {
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
@@ -81,9 +111,18 @@ Deno.serve(async () => {
         headers: { "Content-Type": "application/json" },
       });
     }
-    const today = new Date().toISOString().split("T")[0];
+    const easternNow = new Date();
+    const today = getEasternDateKey(easternNow);
+    const easternHour = getEasternHour(easternNow);
     const nowIso = new Date().toISOString();
     const next36HoursIso = new Date(Date.now() + 36 * 60 * 60 * 1000).toISOString();
+
+    if (easternHour < SLATE_RELEASE_HOUR_ET) {
+      return new Response(JSON.stringify({ message: "Waiting until 6:00 AM Eastern to publish today's slate" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
 
     const { data: leagues } = await supabase
       .from("leagues")

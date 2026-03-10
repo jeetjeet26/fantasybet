@@ -2,6 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { calculatePayout, DAILY_CREDITS } from "@/lib/odds";
+import { getEasternDateKey } from "@/lib/time";
 import type { BetType, BetPick } from "@/lib/types/database";
 
 interface PlaceBetInput {
@@ -32,7 +33,7 @@ export async function placeBet(input: PlaceBetInput) {
     return { error: "Betting is closed for this game" };
   }
 
-  const today = new Date().toISOString().split("T")[0];
+  const today = getEasternDateKey();
 
   const { data: slate } = await supabase
     .from("daily_slates")
@@ -147,7 +148,7 @@ async function fetchDailyBetSlip(leagueId: string): Promise<DailyBetSlipResponse
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { ...emptySlip(leagueId), error: "Not authenticated" };
 
-  const today = new Date().toISOString().split("T")[0];
+  const today = getEasternDateKey();
   const { data: slate } = await supabase
     .from("daily_slates")
     .select("id")

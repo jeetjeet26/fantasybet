@@ -30,6 +30,16 @@ function calcPayout(wager: number, odds: number): number {
   return Math.round((wager + wager * 100 / Math.abs(odds)) * 100) / 100;
 }
 
+function getWeekStartDateKey(dateKey: string) {
+  const [year, month, day] = dateKey.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  const weekday = date.getUTCDay();
+  const diff = weekday === 0 ? -6 : 1 - weekday;
+
+  date.setUTCDate(date.getUTCDate() + diff);
+  return date.toISOString().split("T")[0];
+}
+
 Deno.serve(async () => {
   try {
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
@@ -196,7 +206,7 @@ Deno.serve(async () => {
       }
 
       // Update weekly results for this league
-      const monday = getMonday(new Date(slate.date)).toISOString().split("T")[0];
+      const monday = getWeekStartDateKey(slate.date);
 
       const { data: weekDays } = await supabase
         .from("daily_results")
@@ -277,13 +287,6 @@ function determineBetResult(
     default:
       return "lost";
   }
-}
-
-function getMonday(d: Date) {
-  const date = new Date(d);
-  const day = date.getDay();
-  const diff = date.getDate() - day + (day === 0 ? -6 : 1);
-  return new Date(date.setDate(diff));
 }
 
 function jsonResp(data: unknown, status = 200) {

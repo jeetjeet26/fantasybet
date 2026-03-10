@@ -11,6 +11,7 @@ import { CommissionerSection } from "@/components/leagues/commissioner-section";
 import { LeagueBetting } from "@/components/betting/league-betting";
 import { DailyBetSlip } from "@/components/betting/daily-bet-slip";
 import { DAILY_CREDITS } from "@/lib/odds";
+import { getCurrentEasternWeekStart, getEasternDateKey } from "@/lib/time";
 import type { SlateGame, Bet } from "@/lib/types/database";
 
 interface Props {
@@ -45,7 +46,7 @@ export default async function LeagueDetailPage({ params }: Props) {
     .eq("league_id", id)
     .eq("status", "pending");
 
-  const today = new Date().toISOString().split("T")[0];
+  const today = getEasternDateKey();
 
   const { data: slate } = await supabase
     .from("daily_slates")
@@ -85,7 +86,7 @@ export default async function LeagueDetailPage({ params }: Props) {
     .eq("date", today)
     .order("placement", { ascending: true });
 
-  const monday = getMonday(new Date()).toISOString().split("T")[0];
+  const monday = getCurrentEasternWeekStart();
   const { data: weeklyResults } = await supabase
     .from("weekly_results")
     .select("*, profiles(display_name)")
@@ -93,30 +94,73 @@ export default async function LeagueDetailPage({ params }: Props) {
     .eq("week_start", monday)
     .order("placement", { ascending: true });
 
+  const myDailyResult = (dailyResults ?? []).find((result) => result.user_id === user?.id);
+  const membersCount = members?.length ?? 0;
+
   return (
     <div className="space-y-6">
-      <div>
-        <div className="flex flex-wrap items-center gap-2">
-          <h1 className="text-2xl font-bold tracking-tight">{league.name}</h1>
-          {isCommissioner && (
-            <Badge variant="default" className="text-xs">Commissioner</Badge>
-          )}
-        </div>
-        <div className="mt-1 flex flex-wrap items-center gap-2">
-          <span className="text-sm text-muted-foreground">Invite code:</span>
-          <Badge variant="secondary" className="font-mono">
-            {league.invite_code}
-          </Badge>
-          {league.invite_slug != null && (
-            <>
-              <span className="text-sm text-muted-foreground">Invite link:</span>
-              <Badge variant="outline" className="font-mono text-xs">
-                /join/{league.invite_slug}
+      <Card className="border-0 bg-gradient-to-br from-primary/10 via-background to-background ring-1 ring-primary/15">
+        <CardContent className="space-y-5 py-6">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="text-3xl font-semibold tracking-tight">{league.name}</h1>
+                {isCommissioner && (
+                  <Badge variant="default" className="text-xs">Commissioner</Badge>
+                )}
+                <Badge variant={slate?.status === "open" ? "default" : "outline"}>
+                  {slate?.status === "open" ? "Slate live" : slate?.status ?? "Waiting for slate"}
+                </Badge>
+              </div>
+              <p className="max-w-2xl text-sm text-muted-foreground">
+                {league.description?.trim()
+                  ? league.description
+                  : "Today’s board is built for quick picks, friend competition, and a clean daily rhythm."}
+              </p>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <Badge variant="secondary" className="font-mono">
+                {league.invite_code}
               </Badge>
-            </>
-          )}
-        </div>
-      </div>
+              {league.invite_slug != null && (
+                <Badge variant="outline" className="font-mono text-xs">
+                  /join/{league.invite_slug}
+                </Badge>
+              )}
+            </div>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-3">
+            <LeagueHeaderMetric
+              label="Members"
+              value={`${membersCount}`}
+              helper={membersCount === 1 ? "1 player in this league" : `${membersCount} players in this league`}
+            />
+            <LeagueHeaderMetric
+              label="Credits left"
+              value={`${creditsRemaining}`}
+              helper={`out of ${DAILY_CREDITS} today`}
+            />
+            <LeagueHeaderMetric
+              label="Today"
+              value={myDailyResult ? `#${myDailyResult.placement}` : "—"}
+              helper={
+                myDailyResult
+                  ? `${Number(myDailyResult.net_profit) >= 0 ? "+" : ""}${Number(myDailyResult.net_profit).toFixed(2)} net`
+                  : "No result posted yet"
+              }
+              helperClassName={
+                myDailyResult
+                  ? Number(myDailyResult.net_profit) >= 0
+                    ? "text-green-500"
+                    : "text-red-500"
+                  : undefined
+              }
+            />
+          </div>
+        </CardContent>
+      </Card>
 
       <Tabs defaultValue="today">
         <TabsList>
@@ -209,9 +253,22 @@ export default async function LeagueDetailPage({ params }: Props) {
   );
 }
 
-function getMonday(d: Date) {
-  const date = new Date(d);
-  const day = date.getDay();
-  const diff = date.getDate() - day + (day === 0 ? -6 : 1);
-  return new Date(date.setDate(diff));
+function LeagueHeaderMetric({
+  label,
+  value,
+  helper,
+  helperClassName,
+}: {
+  label: string;
+  value: string;
+  helper: string;
+  helperClassName?: string;
+}) {
+  return (
+    <div className="rounded-xl border bg-background/80 p-3 shadow-sm">
+      <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className="mt-1 text-2xl font-semibold tracking-tight">{value}</p>
+      <p className={`text-xs text-muted-foreground ${helperClassName ?? ""}`}>{helper}</p>
+    </div>
+  );
 }
