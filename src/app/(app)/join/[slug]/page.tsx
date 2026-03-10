@@ -12,12 +12,10 @@ export default async function JoinBySlugPage({ params }: Props) {
 
   const key = slug.toLowerCase().trim();
   const { data: league } = await supabase
-    .from("leagues")
-    .select("id, name")
-    .or(`invite_slug.eq.${key},invite_code.eq.${key}`)
-    .maybeSingle();
+    .rpc("resolve_league_invite", { invite_token: key })
+    .maybeSingle<{ league_id: string; league_name: string; max_members: number | null }>();
 
   if (!league) notFound();
 
-  return <JoinBySlugForm slug={slug} leagueName={league.name} />;
+  return <JoinBySlugForm slug={slug} leagueName={league.league_name} />;
 }

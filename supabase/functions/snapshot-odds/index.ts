@@ -4,7 +4,6 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const ODDS_API_KEY = Deno.env.get("THE_ODDS_API_KEY")!;
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
@@ -73,8 +72,18 @@ interface SelectedGame {
 Deno.serve(async () => {
   try {
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+    const { data: oddsApiKey, error: oddsApiKeyError } = await supabase
+      .rpc("get_the_odds_api_key");
+
+    if (oddsApiKeyError || !oddsApiKey) {
+      return new Response(JSON.stringify({ error: "Missing Odds API key secret" }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
     const today = new Date().toISOString().split("T")[0];
     const nowIso = new Date().toISOString();
+    const next36HoursIso = new Date(Date.now() + 36 * 60 * 60 * 1000).toISOString();
 
     const { data: leagues } = await supabase
       .from("leagues")
@@ -87,20 +96,28 @@ Deno.serve(async () => {
       });
     }
 
+    const { count: existingSlateCount } = await supabase
+      .from("daily_slates")
+      .select("id", { count: "exact", head: true })
+      .eq("date", today);
+
+    if (existingSlateCount != null && existingSlateCount >= leagues.length) {
+      return new Response(JSON.stringify({ message: "Today's slates already exist" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
     const allEvents: OddsEvent[] = [];
 
     for (const sport of US_SPORTS) {
-      const url = `https://api.the-odds-api.com/v4/sports/${sport}/odds/?apiKey=${ODDS_API_KEY}&regions=us&markets=spreads,h2h,totals&oddsFormat=american`;
+      const url = `https://api.the-odds-api.com/v4/sports/${sport}/odds/?apiKey=${oddsApiKey}&regions=us&markets=spreads,h2h,totals&oddsFormat=american`;
 
       const resp = await fetch(url);
       if (!resp.ok) continue;
 
       const events: OddsEvent[] = await resp.json();
-      const todayEvents = events.filter((e) => {
-        const eventDate = new Date(e.commence_time).toISOString().split("T")[0];
-        return eventDate === today;
-      });
-      allEvents.push(...todayEvents);
+      allEvents.push(...events);
     }
 
     allEvents.sort((a, b) => {
@@ -110,8 +127,16 @@ Deno.serve(async () => {
       return new Date(a.commence_time).getTime() - new Date(b.commence_time).getTime();
     });
 
-    let selectedGames: SelectedGame[] = allEvents
-      .filter((e) => new Date(e.commence_time).toISOString() > nowIso)
+    const candidateEvents = allEvents.filter((e) => {
+      const commenceIso = new Date(e.commence_time).toISOString();
+      return commenceIso > nowIso && commenceIso <= next36HoursIso;
+    });
+
+    const upcomingEvents = candidateEvents.length > 0
+      ? candidateEvents
+      : allEvents.filter((e) => new Date(e.commence_time).toISOString() > nowIso);
+
+    let selectedGames: SelectedGame[] = upcomingEvents
       .slice(0, 5)
       .map((event) => {
         const book = event.bookmakers[0];
@@ -148,12 +173,12 @@ Deno.serve(async () => {
     // Fallback: if API has no open games at call time, clone any still-open games from existing
     // same-day slates so late-created leagues can still participate.
     if (selectedGames.length === 0) {
-      const { data: todaySlates } = await supabase
+      const { data: upcomingSlates } = await supabase
         .from("daily_slates")
         .select("id")
-        .eq("date", today);
+        .gte("date", today);
 
-      const slateIds = (todaySlates ?? []).map((s) => s.id);
+      const slateIds = (upcomingSlates ?? []).map((s) => s.id);
       if (slateIds.length > 0) {
         const { data: openTemplateGames } = await supabase
           .from("slate_games")

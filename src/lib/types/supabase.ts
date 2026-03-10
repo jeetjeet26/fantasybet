@@ -489,7 +489,22 @@ export type Database = {
         Returns: number
       }
       is_league_member: { Args: { check_league_id: string }; Returns: boolean }
+      join_league_by_invite: {
+        Args: { invite_token: string }
+        Returns: {
+          error: string | null
+          league_id: string | null
+        }[]
+      }
       placement_points: { Args: { place: number }; Returns: number }
+      resolve_league_invite: {
+        Args: { invite_token: string }
+        Returns: {
+          league_id: string
+          league_name: string
+          max_members: number | null
+        }[]
+      }
       user_league_ids: { Args: Record<string, never>; Returns: string[] }
     }
     Enums: {

@@ -24,6 +24,11 @@ function normalizeInviteToken(input: string) {
   return key.trim();
 }
 
+interface JoinLeagueInviteResult {
+  league_id: string | null;
+  error: string | null;
+}
+
 export async function createLeague(formData: FormData) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -60,38 +65,16 @@ export async function joinLeague(slugOrCode: string) {
 
   const key = normalizeInviteToken(slugOrCode);
 
-  const { data: league, error: findError } = await supabase
-    .from("leagues")
-    .select("id, max_members")
-    .or(`invite_slug.eq.${key},invite_code.eq.${key}`)
-    .maybeSingle();
-
-  if (findError || !league) return { error: "League not found" };
-
-  const { data: existing } = await supabase
-    .from("league_members")
-    .select("id")
-    .eq("league_id", league.id)
-    .eq("user_id", user.id)
-    .maybeSingle();
-
-  if (existing) return { error: "You're already in this league" };
-
-  if (league.max_members != null) {
-    const { count } = await supabase
-      .from("league_members")
-      .select("id", { count: "exact", head: true })
-      .eq("league_id", league.id);
-    if (count != null && count >= league.max_members) return { error: "League is full" };
-  }
-
-  const { error: joinError } = await supabase
-    .from("league_members")
-    .insert({ league_id: league.id, user_id: user.id });
+  const { data: joinResult, error: joinError } = await supabase
+    .rpc("join_league_by_invite", { invite_token: key })
+    .maybeSingle<JoinLeagueInviteResult>();
 
   if (joinError) return { error: joinError.message };
+  if (!joinResult) return { error: "League not found" };
+  if (joinResult.error) return { error: joinResult.error };
+  if (!joinResult.league_id) return { error: "League not found" };
 
-  redirect(`/leagues/${league.id}`);
+  redirect(`/leagues/${joinResult.league_id}`);
 }
 
 export async function inviteToLeague(leagueId: string, email: string) {
