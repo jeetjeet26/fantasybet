@@ -168,6 +168,8 @@ export default async function LeagueDetailPage({ params }: Props) {
         </CardContent>
       </Card>
 
+      <DailyBetSlip leagueId={id} hideWhenEmpty />
+
       <Tabs defaultValue="today">
         <TabsList>
           <TabsTrigger value="today">Today&apos;s Games</TabsTrigger>
@@ -188,25 +190,20 @@ export default async function LeagueDetailPage({ params }: Props) {
         </TabsContent>
 
         <TabsContent value="daily" className="mt-4">
-          <div className="grid gap-4 lg:grid-cols-3">
-            <Card className="lg:col-span-2">
-              <CardHeader>
-                <CardTitle className="text-base">Daily Leaderboard</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {dailyResults && dailyResults.length > 0 ? (
-                  <LeaderboardTable results={dailyResults as unknown as Parameters<typeof LeaderboardTable>[0]["results"]} type="daily" />
-                ) : (
-                  <p className="text-sm text-muted-foreground">
-                    No settled bets yet for this slate. Standings update as games finish.
-                  </p>
-                )}
-              </CardContent>
-            </Card>
-            <div className="lg:sticky lg:top-20 lg:self-start">
-              <DailyBetSlip leagueId={id} />
-            </div>
-          </div>
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Daily Leaderboard</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {dailyResults && dailyResults.length > 0 ? (
+                <LeaderboardTable results={dailyResults as unknown as Parameters<typeof LeaderboardTable>[0]["results"]} type="daily" />
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  No settled bets yet for this slate. Standings update as games finish.
+                </p>
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
 
         <TabsContent value="weekly" className="mt-4">

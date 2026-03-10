@@ -17,6 +17,9 @@ interface ScoreEvent {
   scores: { name: string; score: string }[] | null;
 }
 
+const MAX_SCORE_LOOKBACK_DAYS = 3;
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
 const PLACEMENT_POINTS: Record<number, number> = {
   1: 10, 2: 8, 3: 6, 4: 5, 5: 4, 6: 3, 7: 2,
 };
@@ -57,6 +60,21 @@ function isTerminalGameStatus(status: string) {
   return status === "settled" || status === "cancelled";
 }
 
+function getScoreLookbackDays(games: { commence_time: string }[]) {
+  const oldestCommenceAt = games.reduce((oldest, game) => {
+    const gameTime = new Date(game.commence_time).getTime();
+    return Math.min(oldest, gameTime);
+  }, Date.now());
+
+  const ageMs = Math.max(0, Date.now() - oldestCommenceAt);
+  const days = Math.floor(ageMs / MS_PER_DAY) + 1;
+  return Math.min(MAX_SCORE_LOOKBACK_DAYS, Math.max(1, days));
+}
+
+function hasGameStarted(commenceTime: string) {
+  return new Date(commenceTime).getTime() <= Date.now();
+}
+
 Deno.serve(async () => {
   try {
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
@@ -64,17 +82,18 @@ Deno.serve(async () => {
     const candidateSlateIds = new Set<string>();
     const { data: unsettledGames } = await supabase
       .from("slate_games")
-      .select("id, slate_id, sport_key, home_team, away_team, spread_home, spread_away, total_over")
+      .select("id, slate_id, sport_key, home_team, away_team, spread_home, spread_away, total_over, commence_time, status")
       .in("status", ["upcoming", "live"]);
 
     let settledCount = 0;
 
     if (unsettledGames?.length) {
+      const scoreLookbackDays = getScoreLookbackDays(unsettledGames);
       const sportKeys = [...new Set(unsettledGames.map((g) => g.sport_key))];
       const scoresBySport: Record<string, ScoreEvent[]> = {};
 
       for (const sport of sportKeys) {
-        const url = `https://api.the-odds-api.com/v4/sports/${sport}/scores/?apiKey=${ODDS_API_KEY}&daysFrom=1`;
+        const url = `https://api.the-odds-api.com/v4/sports/${sport}/scores/?apiKey=${ODDS_API_KEY}&daysFrom=${scoreLookbackDays}`;
         const resp = await fetch(url);
         if (!resp.ok) continue;
         scoresBySport[sport] = await resp.json();
@@ -82,16 +101,34 @@ Deno.serve(async () => {
 
       for (const game of unsettledGames) {
         candidateSlateIds.add(game.slate_id);
+        const gameStarted = hasGameStarted(game.commence_time);
 
         const scores = scoresBySport[game.sport_key] ?? [];
         const match = scores.find(
           (s) =>
             s.home_team === game.home_team &&
-            s.away_team === game.away_team &&
-            s.completed
+            s.away_team === game.away_team
         );
 
-        if (!match || !match.scores) continue;
+        if (!match || !match.scores) {
+          if (gameStarted && game.status !== "live") {
+            await supabase
+              .from("slate_games")
+              .update({ status: "live" })
+              .eq("id", game.id);
+          }
+          continue;
+        }
+
+        if (!match.completed) {
+          if (gameStarted && game.status !== "live") {
+            await supabase
+              .from("slate_games")
+              .update({ status: "live" })
+              .eq("id", game.id);
+          }
+          continue;
+        }
 
         const homeScore = parseInt(match.scores.find((s) => s.name === game.home_team)?.score ?? "0");
         const awayScore = parseInt(match.scores.find((s) => s.name === game.away_team)?.score ?? "0");
@@ -147,7 +184,7 @@ async function reconcileSlates(supabase: SupabaseClient, slateIds: string[]) {
   for (const slateId of slateIds) {
     const { data: slate } = await supabase
       .from("daily_slates")
-      .select("date, league_id")
+      .select("date, league_id, status")
       .eq("id", slateId)
       .maybeSingle();
 
@@ -155,13 +192,23 @@ async function reconcileSlates(supabase: SupabaseClient, slateIds: string[]) {
 
     const { data: slateGames } = await supabase
       .from("slate_games")
-      .select("id, status")
+      .select("id, status, commence_time")
       .eq("slate_id", slateId);
 
     const games = slateGames ?? [];
     if (games.length === 0) continue;
 
     const allSettled = games.every((game) => isTerminalGameStatus(game.status));
+    const anyStarted = games.some((game) => hasGameStarted(game.commence_time));
+    const nextSlateStatus = allSettled ? "settled" : anyStarted ? "locked" : "open";
+
+    if (slate.status !== nextSlateStatus) {
+      await supabase
+        .from("daily_slates")
+        .update({ status: nextSlateStatus })
+        .eq("id", slateId);
+    }
+
     const gameIds = games.map((game) => game.id);
 
     const { data: allBets } = await supabase
@@ -171,13 +218,6 @@ async function reconcileSlates(supabase: SupabaseClient, slateIds: string[]) {
 
     const resolvedBets = (allBets ?? []).filter((bet) => bet.result !== "pending");
     if (!allSettled && resolvedBets.length === 0) continue;
-
-    if (allSettled) {
-      await supabase
-        .from("daily_slates")
-        .update({ status: "settled" })
-        .eq("id", slateId);
-    }
 
     const userBets: Record<string, typeof resolvedBets> = {};
     for (const bet of resolvedBets) {
@@ -235,9 +275,10 @@ async function reconcileSlates(supabase: SupabaseClient, slateIds: string[]) {
     });
 
     for (const result of results) {
-      await supabase.from("daily_results").upsert(result, {
+      const { error } = await supabase.from("daily_results").upsert(result, {
         onConflict: "user_id,league_id,date",
       });
+      if (error) throw error;
     }
 
     const monday = getWeekStartDateKey(slate.date);
@@ -268,7 +309,6 @@ async function reconcileSlates(supabase: SupabaseClient, slateIds: string[]) {
         league_id: slate.league_id,
         week_start: monday,
         week_end: sunday,
-        ...stats,
         total_points: stats.points,
         total_profit: stats.profit,
         total_wins: stats.wins,
@@ -285,9 +325,10 @@ async function reconcileSlates(supabase: SupabaseClient, slateIds: string[]) {
     });
 
     for (const weeklyResult of weeklyResults) {
-      await supabase.from("weekly_results").upsert(weeklyResult, {
+      const { error } = await supabase.from("weekly_results").upsert(weeklyResult, {
         onConflict: "user_id,league_id,week_start",
       });
+      if (error) throw error;
     }
 
     reconciledSlates++;

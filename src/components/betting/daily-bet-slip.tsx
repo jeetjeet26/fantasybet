@@ -15,11 +15,12 @@ import {
 
 interface Props {
   leagueId: string;
+  hideWhenEmpty?: boolean;
 }
 
 const POLL_MS = 60 * 60 * 1000;
 
-export function DailyBetSlip({ leagueId }: Props) {
+export function DailyBetSlip({ leagueId, hideWhenEmpty = false }: Props) {
   const [data, setData] = useState<DailyBetSlipResponse | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -63,6 +64,11 @@ export function DailyBetSlip({ leagueId }: Props) {
     : "";
 
   const summary = data?.summary;
+  const hasItems = (data?.items.length ?? 0) > 0;
+
+  if (hideWhenEmpty && !error && !hasItems && !pending) {
+    return null;
+  }
 
   return (
     <Card>
