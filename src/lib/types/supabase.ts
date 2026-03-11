@@ -361,6 +361,7 @@ export type Database = {
           id: string
           moneyline_away: number | null
           moneyline_home: number | null
+          odds_api_event_id: string | null
           slate_id: string
           sport_key: string
           sport_title: string
@@ -383,6 +384,7 @@ export type Database = {
           id?: string
           moneyline_away?: number | null
           moneyline_home?: number | null
+          odds_api_event_id?: string | null
           slate_id: string
           sport_key: string
           sport_title: string
@@ -405,6 +407,7 @@ export type Database = {
           id?: string
           moneyline_away?: number | null
           moneyline_home?: number | null
+          odds_api_event_id?: string | null
           slate_id?: string
           sport_key?: string
           sport_title?: string

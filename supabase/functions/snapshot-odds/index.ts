@@ -52,6 +52,7 @@ interface Outcome {
 }
 
 interface SelectedGame {
+  odds_api_event_id: string | null;
   sport_key: string;
   sport_title: string;
   home_team: string;
@@ -191,6 +192,7 @@ Deno.serve(async () => {
         const under = totals?.outcomes.find((o) => o.name === "Under");
 
         return {
+          odds_api_event_id: event.id,
           sport_key: event.sport_key,
           sport_title: event.sport_title,
           home_team: event.home_team,
@@ -221,7 +223,7 @@ Deno.serve(async () => {
       if (slateIds.length > 0) {
         const { data: openTemplateGames } = await supabase
           .from("slate_games")
-          .select("sport_key, sport_title, home_team, away_team, commence_time, spread_home, spread_away, spread_home_odds, spread_away_odds, moneyline_home, moneyline_away, total_over, total_under, total_over_odds, total_under_odds, status")
+          .select("odds_api_event_id, sport_key, sport_title, home_team, away_team, commence_time, spread_home, spread_away, spread_home_odds, spread_away_odds, moneyline_home, moneyline_away, total_over, total_under, total_over_odds, total_under_odds, status")
           .in("slate_id", slateIds)
           .eq("status", "upcoming")
           .gt("commence_time", nowIso)
@@ -232,6 +234,7 @@ Deno.serve(async () => {
           const key = `${g.sport_key}:${g.home_team}:${g.away_team}:${g.commence_time}`;
           if (deduped.has(key)) continue;
           deduped.set(key, {
+            odds_api_event_id: g.odds_api_event_id,
             sport_key: g.sport_key,
             sport_title: g.sport_title,
             home_team: g.home_team,
@@ -289,6 +292,7 @@ Deno.serve(async () => {
       const games = selectedGames.map((event) => {
         return {
           slate_id: slate.id,
+          odds_api_event_id: event.odds_api_event_id,
           sport_key: event.sport_key,
           sport_title: event.sport_title,
           home_team: event.home_team,

@@ -38,6 +38,7 @@ export function GameCard({ game, myBets, selectedBets, onSelectBet, disabled }: 
 
   const isStarted = game.status !== "upcoming";
   const selectionCount = selectedBets.length;
+  const hasScore = game.home_score !== null && game.away_score !== null;
 
   function select(betType: BetType, betPick: BetPick, odds: number, label: string) {
     onSelectBet({
@@ -78,7 +79,7 @@ export function GameCard({ game, myBets, selectedBets, onSelectBet, disabled }: 
                 {game.status === "settled" ? "Final" : "Live"}
               </Badge>
             )}
-            {game.status === "settled" && game.home_score !== null ? (
+            {hasScore ? (
               <span className="font-mono text-sm font-bold">
                 {game.away_score} - {game.home_score}
               </span>

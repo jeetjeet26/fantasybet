@@ -186,9 +186,9 @@ function SlipRow({ item }: { item: DailyBetSlipItem }) {
           <span>Payout {item.payout.toFixed(2)}</span>
         )}
       </div>
-      {item.game.status === "settled" && item.game.homeScore !== null && item.game.awayScore !== null ? (
+      {item.game.homeScore !== null && item.game.awayScore !== null ? (
         <p className="mt-1 text-xs font-mono">
-          Final: {item.game.awayScore} - {item.game.homeScore}
+          {item.game.status === "settled" ? "Final" : "Live"}: {item.game.awayScore} - {item.game.homeScore}
         </p>
       ) : null}
     </div>

@@ -3,8 +3,6 @@
 // Deploy with: supabase functions deploy settle-bets
 
 import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-const ODDS_API_KEY = Deno.env.get("THE_ODDS_API_KEY")!;
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
@@ -15,9 +13,10 @@ interface ScoreEvent {
   away_team: string;
   completed: boolean;
   scores: { name: string; score: string }[] | null;
+  last_update?: string | null;
 }
 
-const MAX_SCORE_LOOKBACK_DAYS = 7;
+const MAX_SCORE_LOOKBACK_DAYS = 3;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 function calcPayout(wager: number, odds: number): number {
@@ -74,18 +73,35 @@ function parseScore(score: string | undefined): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function matchesScoreEvent(
+  game: { odds_api_event_id: string | null; home_team: string; away_team: string },
+  score: ScoreEvent
+) {
+  if (game.odds_api_event_id) {
+    return score.id === game.odds_api_event_id;
+  }
+
+  return score.home_team === game.home_team && score.away_team === game.away_team;
+}
+
 Deno.serve(async () => {
   try {
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+    const { data: oddsApiKey, error: oddsApiKeyError } = await supabase
+      .rpc("get_the_odds_api_key");
+
+    if (oddsApiKeyError || !oddsApiKey) {
+      return jsonResp({ error: "Missing Odds API key secret" }, 500);
+    }
 
     const candidateSlateIds = new Set<string>();
     const { data: unsettledGames } = await supabase
       .from("slate_games")
-      .select("id, slate_id, sport_key, home_team, away_team, spread_home, spread_away, total_over, commence_time, status, home_score, away_score")
+      .select("id, slate_id, sport_key, home_team, away_team, spread_home, spread_away, total_over, commence_time, status, home_score, away_score, odds_api_event_id")
       .in("status", ["upcoming", "live"]);
     const { data: corruptedSettledGames } = await supabase
       .from("slate_games")
-      .select("id, slate_id, sport_key, home_team, away_team, spread_home, spread_away, total_over, commence_time, status, home_score, away_score")
+      .select("id, slate_id, sport_key, home_team, away_team, spread_home, spread_away, total_over, commence_time, status, home_score, away_score, odds_api_event_id")
       .eq("status", "settled")
       .or("home_score.is.null,away_score.is.null");
 
@@ -99,7 +115,7 @@ Deno.serve(async () => {
       const scoresBySport: Record<string, ScoreEvent[]> = {};
 
       for (const sport of sportKeys) {
-        const url = `https://api.the-odds-api.com/v4/sports/${sport}/scores/?apiKey=${ODDS_API_KEY}&daysFrom=${scoreLookbackDays}`;
+        const url = `https://api.the-odds-api.com/v4/sports/${sport}/scores/?apiKey=${oddsApiKey}&daysFrom=${scoreLookbackDays}`;
         const resp = await fetch(url);
         if (!resp.ok) continue;
         scoresBySport[sport] = await resp.json();
@@ -112,9 +128,7 @@ Deno.serve(async () => {
 
         const scores = scoresBySport[game.sport_key] ?? [];
         const match = scores.find(
-          (s) =>
-            s.home_team === game.home_team &&
-            s.away_team === game.away_team
+          (s) => matchesScoreEvent(game, s)
         );
 
         if (!match || !match.scores) {
@@ -127,24 +141,40 @@ Deno.serve(async () => {
           continue;
         }
 
+        const homeScore = parseScore(match.scores.find((s) => s.name === game.home_team)?.score);
+        const awayScore = parseScore(match.scores.find((s) => s.name === game.away_team)?.score);
+        const hasScores = homeScore !== null && awayScore !== null;
+        const scoreChanged = game.home_score !== homeScore || game.away_score !== awayScore;
+        const eventIdChanged = game.odds_api_event_id !== match.id;
+
         if (!match.completed) {
-          if (gameStarted && game.status !== "live") {
+          if (hasScores && (game.status !== "live" || scoreChanged || eventIdChanged)) {
             await supabase
               .from("slate_games")
-              .update({ status: "live" })
+              .update({
+                home_score: homeScore,
+                away_score: awayScore,
+                status: "live",
+                odds_api_event_id: match.id,
+              })
+              .eq("id", game.id);
+          } else if (gameStarted && game.status !== "live") {
+            await supabase
+              .from("slate_games")
+              .update({
+                status: "live",
+                odds_api_event_id: match.id,
+              })
               .eq("id", game.id);
           }
           continue;
         }
 
-        const homeScore = parseScore(match.scores.find((s) => s.name === game.home_team)?.score);
-        const awayScore = parseScore(match.scores.find((s) => s.name === game.away_team)?.score);
-
-        if (homeScore === null || awayScore === null) {
+        if (!hasScores) {
           if (gameStarted && game.status !== "live") {
             await supabase
               .from("slate_games")
-              .update({ status: "live", home_score: null, away_score: null })
+              .update({ status: "live", home_score: null, away_score: null, odds_api_event_id: match.id })
               .eq("id", game.id);
           }
           continue;
@@ -152,7 +182,7 @@ Deno.serve(async () => {
 
         await supabase
           .from("slate_games")
-          .update({ home_score: homeScore, away_score: awayScore, status: "settled" })
+          .update({ home_score: homeScore, away_score: awayScore, status: "settled", odds_api_event_id: match.id })
           .eq("id", game.id);
 
         const { data: bets } = await supabase

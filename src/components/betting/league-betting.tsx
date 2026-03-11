@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
@@ -8,6 +9,8 @@ import { GameCard } from "./game-card";
 import { BetSlip } from "./bet-slip";
 import type { DailySlate, SlateGame, Bet, BetType, BetPick } from "@/lib/types/database";
 import { DAILY_CREDITS } from "@/lib/odds";
+
+const LIVE_REFRESH_MS = 60_000;
 
 export interface BetSelection {
   gameId: string;
@@ -27,12 +30,43 @@ interface Props {
 }
 
 export function LeagueBetting({ leagueId, slate, games, myBets, creditsRemaining: initialCredits }: Props) {
+  const router = useRouter();
   const [selections, setSelections] = useState<BetSelection[]>([]);
   const [credits, setCredits] = useState(initialCredits);
   const openGames = games.filter((game) => game.status === "upcoming").length;
   const placedBetCount = myBets.length;
   const selectedCount = selections.length;
   const slateLock = games[0]?.commence_time ?? slate?.locked_at ?? null;
+  const liveGames = games.filter((game) => game.status === "live").length;
+  const nextStartAt = games.find((game) => game.status === "upcoming")?.commence_time ?? null;
+
+  useEffect(() => {
+    if (!slate || slate.status === "settled") return;
+
+    const hasStartedGame = games.some((game) => new Date(game.commence_time).getTime() <= Date.now());
+
+    if (hasStartedGame) {
+      const intervalId = window.setInterval(() => {
+        router.refresh();
+      }, LIVE_REFRESH_MS);
+
+      return () => window.clearInterval(intervalId);
+    }
+
+    if (!nextStartAt) return;
+
+    const msUntilNextStart = new Date(nextStartAt).getTime() - Date.now();
+    if (msUntilNextStart <= 0) {
+      router.refresh();
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      router.refresh();
+    }, msUntilNextStart + 1000);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [games, nextStartAt, router, slate]);
 
   function addSelection(sel: BetSelection) {
     if (selections.find((s) => s.gameId === sel.gameId && s.betType === sel.betType && s.betPick === sel.betPick)) {
@@ -106,13 +140,20 @@ export function LeagueBetting({ leagueId, slate, games, myBets, creditsRemaining
                 ? "Tap any line to add it to your card. Your current bet options stay exactly the same."
                 : "This slate is no longer open for new bets."}
             </p>
+            {slate.status !== "settled" ? (
+              <p className="text-xs text-muted-foreground">
+                Live scores refresh automatically about every minute once games begin.
+              </p>
+            ) : null}
           </div>
           <div className="flex items-center gap-2">
             <Badge variant={slate.status === "open" ? "default" : "secondary"}>
               {slate.status === "open" ? "Betting open" : slate.status}
             </Badge>
             <Separator orientation="vertical" className="hidden h-5 sm:block" />
-            <span className="text-sm text-muted-foreground">{openGames} open now</span>
+            <span className="text-sm text-muted-foreground">
+              {liveGames > 0 ? `${liveGames} live now` : `${openGames} open now`}
+            </span>
           </div>
         </div>
         {games.map((game) => {
