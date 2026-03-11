@@ -89,6 +89,7 @@ export interface DailyBetSlipItem {
   potentialPayout: number;
   payout: number;
   result: "pending" | "won" | "lost" | "push";
+  liveResult: "winning" | "losing" | "pushing" | null;
   betType: BetType;
   betPick: BetPick;
   createdAt: string;
@@ -101,6 +102,45 @@ export interface DailyBetSlipItem {
     homeScore: number | null;
     awayScore: number | null;
   };
+}
+
+function getLiveResult(
+  bet: { bet_type: BetType; bet_pick: BetPick },
+  game: {
+    status: "upcoming" | "live" | "settled" | "cancelled";
+    home_score: number | null;
+    away_score: number | null;
+    spread_home: number | null;
+    spread_away: number | null;
+    total_over: number | null;
+  }
+): DailyBetSlipItem["liveResult"] {
+  if (game.status !== "live" || game.home_score === null || game.away_score === null) return null;
+
+  const homeScore = game.home_score;
+  const awayScore = game.away_score;
+  const scoreDiff = homeScore - awayScore;
+  const totalScore = homeScore + awayScore;
+
+  switch (bet.bet_type) {
+    case "moneyline":
+      if (bet.bet_pick === "home") return homeScore > awayScore ? "winning" : homeScore < awayScore ? "losing" : "pushing";
+      return awayScore > homeScore ? "winning" : awayScore < homeScore ? "losing" : "pushing";
+    case "spread": {
+      const spread = bet.bet_pick === "home" ? game.spread_home ?? 0 : game.spread_away ?? 0;
+      const adjustedDiff = bet.bet_pick === "home" ? scoreDiff + spread : -scoreDiff + spread;
+      if (adjustedDiff > 0) return "winning";
+      if (adjustedDiff < 0) return "losing";
+      return "pushing";
+    }
+    case "over_under": {
+      const line = game.total_over ?? 0;
+      if (bet.bet_pick === "over") return totalScore > line ? "winning" : totalScore < line ? "losing" : "pushing";
+      return totalScore < line ? "winning" : totalScore > line ? "losing" : "pushing";
+    }
+    default:
+      return null;
+  }
 }
 
 export interface DailyBetSlipSummary {
@@ -161,7 +201,7 @@ async function fetchDailyBetSlip(leagueId: string): Promise<DailyBetSlipResponse
 
   const { data: gamesData } = await supabase
     .from("slate_games")
-    .select("id, home_team, away_team, commence_time, status, home_score, away_score")
+    .select("id, home_team, away_team, commence_time, status, home_score, away_score, spread_home, spread_away, total_over")
     .eq("slate_id", slate.id)
     .order("commence_time", { ascending: true });
 
@@ -193,6 +233,7 @@ async function fetchDailyBetSlip(leagueId: string): Promise<DailyBetSlipResponse
         potentialPayout: Number(bet.potential_payout),
         payout: Number(bet.payout),
         result: bet.result,
+        liveResult: bet.result === "pending" ? getLiveResult(bet, game) : null,
         betType: bet.bet_type,
         betPick: bet.bet_pick,
         createdAt: bet.created_at,
